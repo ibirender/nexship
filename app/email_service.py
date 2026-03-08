@@ -1,10 +1,13 @@
 # app/email.py
 
-import smtplib,os
+import smtplib, os
+from dotenv import load_dotenv
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# Mailtrap Credentials
+# LOAD .env FILE
+load_dotenv()
+
 MAIL_HOST = os.getenv("MAIL_HOST")
 MAIL_PORT = int(os.getenv("MAIL_PORT"))
 MAIL_USER = os.getenv("MAIL_USER")
@@ -27,7 +30,6 @@ def send_reset_email(to_email: str, otp: str):
     Your OTP is: {otp}
     """
 
-    # Create message
     msg = MIMEMultipart("alternative")
     msg["From"] = MAIL_USER
     msg["To"] = to_email
@@ -36,13 +38,13 @@ def send_reset_email(to_email: str, otp: str):
     msg.attach(MIMEText(text_content, "plain"))
     msg.attach(MIMEText(html_content, "html"))
 
-    # 🔥 THIS PART GOES HERE
     try:
         with smtplib.SMTP(MAIL_HOST, MAIL_PORT) as server:
             server.starttls()
             server.login(MAIL_USER, MAIL_PASS)
             server.send_message(msg)
 
+        print("Email sent successfully")
         return True
 
     except Exception as e:

@@ -438,7 +438,7 @@ html,body{height:100%;background:var(--bg);color:var(--ink);font-family:'DM Sans
       <button class="nav-item active" id="nav-profile" onclick="switchTab('profile')"><span class="nav-icon">👤</span>Profile</button>
       <button class="nav-item" id="nav-wallet" onclick="switchTab('wallet')"><span class="nav-icon">💰</span>Wallet</button>
       <button class="nav-item" id="nav-products" onclick="switchTab('products')"><span class="nav-icon">📦</span>Products</button>
-      <button class="nav-item" id="nav-orders" onclick="switchTab('orders')"><span class="nav-icon">🛒</span>Orders</button>
+      <button class="nav-item" id="nav-orders" onclick="switchTab('orders')"><span class="nav-icon">🛒</span>All User Orders</button>
       <button class="nav-item" id="nav-security" onclick="switchTab('security')"><span class="nav-icon">🔒</span>Security</button>
     </nav>
 
@@ -515,6 +515,8 @@ let currentUser = null;
 let currentBalance = 0;
 let balancePolling = null;
 let currentTab = 'profile';
+// CART SYSTEM
+let cart = [];
 
 // ══════════════════════════════════════════
 // HTTP HELPER
@@ -806,6 +808,8 @@ function renderProfile(c) {
           <span class="badge badge-cyan">ID #${currentUser.id}</span>
         </div>
       </div>
+  
+      
       <div class="balance-showcase">
         <div style="font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:6px">Wallet Balance</div>
         <div class="balance-big" id="profile-balance">${fmtCur(currentBalance)}</div>
@@ -887,176 +891,441 @@ async function renderWallet(c) {
 // ══════════════════════════════════════════
 async function renderProducts(c) {
   try {
+
     const products = await req('GET','/products/');
-    const inStock = products.filter(p=>p.stock>0).length;
-    const totalVal = products.reduce((s,p)=>s+p.price*(p.stock||0),0);
+
     c.innerHTML = `
-      <div class="stat-grid anim-rise">
-        <div class="stat-tile"><div class="stat-label">Total</div><div class="stat-value" style="color:var(--cyan)">${products.length}</div><div class="stat-icon">📦</div></div>
-        <div class="stat-tile"><div class="stat-label">In Stock</div><div class="stat-value" style="color:var(--green)">${inStock}</div><div class="stat-icon">✅</div></div>
-        <div class="stat-tile"><div class="stat-label">Out of Stock</div><div class="stat-value" style="color:var(--red)">${products.length-inStock}</div><div class="stat-icon">⚠️</div></div>
-        <div class="stat-tile"><div class="stat-label">Inventory Value</div><div class="stat-value" style="color:#a78bfa;font-size:18px">${fmtCur(totalVal)}</div><div class="stat-icon">💎</div></div>
-      </div>
+
+<div style="display:grid;grid-template-columns:1fr ${currentUser.is_admin ? '0px' : '320px'};gap:20px">
+
+  <!-- LEFT SIDE PRODUCTS -->
+  <div>
+
       <div class="sec-head anim-rise-1">
         <div class="sec-title">All Products</div>
-        <div style="display:flex;gap:10px;align-items:center">
-          <span class="count-tag">${products.length} items</span>
-          <button class="btn btn-primary btn-sm" onclick="openProductModal()">＋ Add Product</button>
-        </div>
+        <span class="count-tag">${products.length} items</span>
       </div>
+
       <div class="product-grid anim-rise-2" id="product-grid">
-        ${!products.length ? '<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📦</div><div>No products yet. Add your first one!</div></div>' :
-          products.map((p,i) => {
-            const [bcls,blabel] = stockBadge(p.stock??0);
+
+        ${
+          !products.length
+          ? '<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📦</div><div>No products available</div></div>'
+          : products.map((p,i)=>{
+
+            const [bcls,blabel] = stockBadge(p.stock ?? 0)
+
             return `
             <div class="product-card" style="animation:riseUp .4s ${i*40}ms both">
-              <div class="product-thumb">${emojiFor(p.name)}</div>
-              <div class="product-body">
-                <div class="product-name">${p.name}</div>
-                <div class="product-desc">${p.description||'&nbsp;'}</div>
-                <div class="product-row">
-                  <div class="product-price">${fmtCur(p.price)}</div>
-                  <span class="badge ${bcls}">${blabel}</span>
-                </div>
-                <div class="product-actions">
-                  <button class="btn btn-ghost btn-xs" style="flex:1" onclick="openProductModal(${JSON.stringify(p).replace(/"/g,'&quot;')})">✏ Edit</button>
-                  <button class="btn btn-danger btn-xs" onclick="deleteProduct(${p.id})">🗑</button>
-                </div>
+
+              <div class="product-thumb">
+                ${emojiFor(p.name)}
               </div>
-            </div>`;
+
+              <div class="product-body">
+
+                <div class="product-name">
+                  ${p.name}
+                </div>
+
+                <div class="product-desc">
+                  ${p.description || '&nbsp;'}
+                </div>
+
+                <div class="product-row">
+                  <div class="product-price">
+                    ${fmtCur(p.price)}
+                  </div>
+
+                  <span class="badge ${bcls}">
+                    ${blabel}
+                  </span>
+                </div>
+
+                ${
+                  !currentUser.is_admin ? `
+                <div class="product-actions" style="display:flex;gap:8px;margin-top:12px">
+
+                  <div style="display:flex;align-items:center;border:1px solid var(--border);border-radius:10px">
+
+<button onclick="changeQty(${p.id},-1)"
+  ${p.stock===0?'disabled':''}
+  style="padding:6px 10px;background:none;border:none;color:white;cursor:pointer;${p.stock===0?'opacity:0.4;cursor:not-allowed':''}">
+  -
+</button>
+
+<span id="qty-${p.id}" style="padding:0 10px">${p.stock===0?0:1}</span>
+
+<button onclick="changeQty(${p.id},1)"
+  ${p.stock===0?'disabled':''}
+  style="padding:6px 10px;background:none;border:none;color:white;cursor:pointer;${p.stock===0?'opacity:0.4;cursor:not-allowed':''}">
+  +
+</button>
+
+                  </div>
+
+                  <button class="btn btn-primary btn-sm"
+                    onclick="orderProduct(${p.id})"
+                    ${p.stock===0?'disabled':''}>
+                    Add to Cart
+                  </button>
+
+                </div>
+                ` : ''}
+
+              </div>
+
+            </div>
+            `
           }).join('')
         }
+
       </div>
-    `;
-  } catch(e) { c.innerHTML = `<div class="alert alert-error">Failed to load products: ${e.message}</div>`; }
-}
 
-// Product Modal
-function openProductModal(product=null) {
-  document.getElementById('modal-product-id').value = product?.id || '';
-  document.getElementById('modal-title').textContent = product ? 'Edit Product' : 'Add Product';
-  document.getElementById('modal-name').value = product?.name || '';
-  document.getElementById('modal-desc').value = product?.description || '';
-  document.getElementById('modal-price').value = product?.price || '';
-  document.getElementById('modal-stock').value = product?.stock ?? '';
-  document.getElementById('modal-submit-btn').textContent = product ? 'Save Changes →' : 'Create Product →';
-  document.getElementById('modal-alert').innerHTML = '';
-  updateModalPreview();
-  document.getElementById('product-modal').style.display = 'flex';
-}
-function closeProductModal() { document.getElementById('product-modal').style.display='none'; }
-function updateModalPreview() {
-  const name = document.getElementById('modal-name').value;
-  const price = parseFloat(document.getElementById('modal-price').value)||0;
-  const prev = document.getElementById('modal-preview');
-  if(name) {
-    prev.style.display='flex';
-    document.getElementById('modal-preview-emoji').textContent = emojiFor(name);
-    document.getElementById('modal-preview-name').textContent = name;
-    document.getElementById('modal-preview-price').textContent = fmtCur(price);
-  } else { prev.style.display='none'; }
-}
-document.getElementById('modal-name').addEventListener('input', updateModalPreview);
-document.getElementById('modal-price').addEventListener('input', updateModalPreview);
+  </div>
 
-async function submitProduct() {
-  const id = document.getElementById('modal-product-id').value;
-  const name = document.getElementById('modal-name').value.trim();
-  const description = document.getElementById('modal-desc').value.trim();
-  const price = parseFloat(document.getElementById('modal-price').value);
-  const stock = parseInt(document.getElementById('modal-stock').value)||0;
-  if(!name||!price) return showAlert('modal-alert','Name and price are required.');
-  setBtnLoading('modal-submit-btn', true);
-  try {
-    if(id) await req('PUT',`/products/${id}`,{name,description,price,quantity:stock});
-    else await req('POST','/products/',{name,description,price,stock});
-    closeProductModal();
-    renderTab('products');
-  } catch(e) { showAlert('modal-alert', e.message); }
-  finally { setBtnLoading('modal-submit-btn', false, id?'Save Changes →':'Create Product →'); }
-}
 
-async function deleteProduct(id) {
-  if(!confirm('Delete this product?')) return;
-  try { await req('DELETE',`/products/${id}`); renderTab('products'); }
-  catch(e) { alert('Delete failed: '+e.message); }
-}
+  ${
+    !currentUser.is_admin ? `
+  <!-- RIGHT SIDE CART -->
+  <div class="card card-pad anim-rise-2"
+       style="height:fit-content;position:sticky;top:20px">
 
+    <div class="sec-title" style="margin-bottom:12px">Cart</div>
+
+    <div id="cart-items">
+      No items in cart
+    </div>
+
+    <div class="divider"></div>
+
+    <div style="display:flex;justify-content:space-between;font-weight:600">
+      <span>Total</span>
+      <span id="cart-total">₹0</span>
+    </div>
+
+    <button class="btn btn-primary btn-full"
+      style="margin-top:14px"
+      onclick="placeCartOrder()">
+      Place Order
+    </button>
+
+  </div>
+  ` : ''}
+
+</div>
+
+`;
+
+  } catch(e) {
+
+    c.innerHTML = `
+      <div class="alert alert-error">
+        Failed to load products: ${e.message}
+      </div>
+    `
+  }
+}// ══════════════════════════════════════════
+// PRODUCT ORDER FUNCTIONS
 // ══════════════════════════════════════════
+
+function changeQty(productId, delta) {
+
+  const el = document.getElementById(`qty-${productId}`)
+  if(!el) return
+
+  let qty = parseInt(el.textContent) || 1
+
+  qty += delta
+
+  if(qty < 1) qty = 1
+
+  el.textContent = qty
+}
+function renderCart(){
+
+  const el = document.getElementById("cart-items")
+  if(!el) return
+
+  if(cart.length===0){
+    el.innerHTML="<div>No items in cart</div>"
+    document.getElementById("cart-total").textContent="₹0"
+    return
+  }
+
+  let total = 0
+
+  el.innerHTML = cart.map((item,index)=>{
+
+    const sub = item.price * item.quantity
+    total += sub
+
+    return `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+
+      <div style="flex:1">
+        ${item.name}
+      </div>
+
+      <div style="display:flex;align-items:center;gap:6px">
+
+        <button onclick="decreaseCart(${index})"
+        style="background:none;border:1px solid var(--border);color:white;padding:2px 8px;border-radius:6px;cursor:pointer">
+        -
+        </button>
+
+        <span>${item.quantity}</span>
+
+        <button onclick="increaseCart(${index})"
+        style="background:none;border:1px solid var(--border);color:white;padding:2px 8px;border-radius:6px;cursor:pointer">
+        +
+        </button>
+
+        <button onclick="removeCart(${index})"
+        style="background:none;border:none;color:red;font-size:16px;cursor:pointer">
+        ✕
+        </button>
+
+      </div>
+
+      <div style="width:80px;text-align:right">
+        ${fmtCur(sub)}
+      </div>
+
+    </div>
+    `
+  }).join("")
+
+  document.getElementById("cart-total").textContent = fmtCur(total)
+
+}
+function increaseCart(index){
+  cart[index].quantity++
+  renderCart()
+}
+
+function decreaseCart(index){
+
+  cart[index].quantity--
+
+  if(cart[index].quantity <= 0){
+    cart.splice(index,1)
+  }
+
+  renderCart()
+}
+
+function removeCart(index){
+  cart.splice(index,1)
+  renderCart()
+}
+async function placeCartOrder(){
+
+  if(cart.length===0){
+    alert("Cart empty")
+    return
+  }
+
+  try{
+
+    const res = await req('POST','/orders',{
+      items: cart.map(i=>({
+        product_id:i.product_id,
+        quantity:i.quantity
+      }))
+    })
+
+    alert(`Order placed successfully\nOrder ID: ${res.order_id}`)
+
+    cart = []
+
+    renderCart()
+
+    switchTab("orders")
+
+  }
+  catch(e){
+    alert("Order failed: "+e.message)
+  }
+
+}
+
+
+function orderProduct(productId){
+
+  const qty = parseInt(
+    document.getElementById(`qty-${productId}`).textContent
+  )
+
+  const productCard = event.target.closest(".product-card")
+
+  const name = productCard.querySelector(".product-name").textContent
+  const price = parseFloat(
+    productCard.querySelector(".product-price")
+      .textContent.replace("₹","")
+  )
+
+  const existing = cart.find(i=>i.product_id===productId)
+
+  if(existing){
+    existing.quantity += qty
+  }
+  else{
+    cart.push({
+      product_id:productId,
+      name:name,
+      price:price,
+      quantity:qty
+    })
+  }
+
+  renderCart()
+
+}// ══════════════════════════════════════════
 // ORDERS TAB
 // ══════════════════════════════════════════
 let expandedOrder = null;
+
 async function renderOrders(c) {
   try {
-    const [orders, products] = await Promise.all([req('GET','/orders'), req('GET','/products/')]);
-    const spent = orders.filter(o=>o.status==='completed').reduce((s,o)=>s+o.total_price,0);
+
+    let orders;
+
+if(currentUser.is_admin){
+  orders = await req('GET','/admin/orders');
+}else{
+  orders = await req('GET','/orders');
+}
+    orders.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+
+
+    const spent = orders
+      .filter(o=>o.status==='completed')
+      .reduce((s,o)=>s+o.total_price,0);
+
     c.innerHTML = `
       <div class="stat-grid anim-rise">
-        <div class="stat-tile"><div class="stat-label">Total Orders</div><div class="stat-value" style="color:var(--cyan)">${orders.length}</div><div class="stat-icon">🛒</div></div>
-        <div class="stat-tile"><div class="stat-label">Pending</div><div class="stat-value" style="color:var(--amber)">${orders.filter(o=>o.status==='pending').length}</div><div class="stat-icon">⏳</div></div>
-        <div class="stat-tile"><div class="stat-label">Completed</div><div class="stat-value" style="color:var(--green)">${orders.filter(o=>o.status==='completed').length}</div><div class="stat-icon">✅</div></div>
-        <div class="stat-tile"><div class="stat-label">Total Spent</div><div class="stat-value" style="color:var(--red);font-size:18px">${fmtCur(spent)}</div><div class="stat-icon">💸</div></div>
-      </div>
-
-      <div class="card card-pad anim-rise-1" style="margin-bottom:24px">
-        <div style="font-family:'Bricolage Grotesque',sans-serif;font-size:15px;font-weight:700;margin-bottom:14px">Place New Order</div>
-        <div style="display:grid;grid-template-columns:1fr 90px auto;gap:10px;align-items:flex-end">
-          <div class="field" style="margin-bottom:0">
-            <label>Product</label>
-            <select id="order-product">
-              <option value="">Choose product…</option>
-              ${products.filter(p=>p.stock>0).map(p=>`<option value="${p.id}">${p.name} — ${fmtCur(p.price)}</option>`).join('')}
-            </select>
-          </div>
-          <div class="field" style="margin-bottom:0">
-            <label>Qty</label>
-            <input id="order-qty" type="number" min="1" value="1"/>
-          </div>
-          <button class="btn btn-primary" style="height:44px" id="place-order-btn" onclick="placeOrder()">Order →</button>
+        <div class="stat-tile">
+          <div class="stat-label">Total Orders</div>
+          <div class="stat-value" style="color:var(--cyan)">${orders.length}</div>
+          <div class="stat-icon">🛒</div>
         </div>
-        <div id="order-alert"></div>
+
+        <div class="stat-tile">
+          <div class="stat-label">Pending</div>
+          <div class="stat-value" style="color:var(--amber)">
+            ${orders.filter(o=>o.status==='pending').length}
+          </div>
+          <div class="stat-icon">⏳</div>
+        </div>
+
+        <div class="stat-tile">
+          <div class="stat-label">Completed</div>
+          <div class="stat-value" style="color:var(--green)">
+            ${orders.filter(o=>o.status==='completed').length}
+          </div>
+          <div class="stat-icon">✅</div>
+        </div>
+
+        <div class="stat-tile">
+          <div class="stat-label">Total Spent</div>
+          <div class="stat-value" style="color:var(--red);font-size:18px">
+            ${fmtCur(spent)}
+          </div>
+          <div class="stat-icon">💸</div>
+        </div>
       </div>
 
       <div class="sec-head anim-rise-2">
         <div class="sec-title">Your Orders</div>
         <span class="count-tag">${orders.length} orders</span>
       </div>
+
       <div id="orders-list" class="anim-rise-2">
-        ${!orders.length ? '<div class="empty"><div class="empty-icon">🛒</div><div>No orders yet. Place your first one!</div></div>' :
-          orders.map((o,i) => {
-            const [bcls,blabel] = statusBadge(o.status);
-            const date = o.created_at ? new Date(o.created_at).toLocaleDateString('en-IN') : '—';
+        ${
+          !orders.length
+          ? '<div class="empty"><div class="empty-icon">🛒</div><div>No orders yet.</div></div>'
+          : orders.map((o,i)=>{
+
+            const [bcls,blabel] = statusBadge(o.status)
+            const date = o.created_at
+              ? new Date(o.created_at).toLocaleDateString('en-IN')
+              : '—'
+
             return `
             <div class="order-card" style="animation:riseUp .3s ${i*40}ms both">
+
               <div class="order-head" onclick="toggleOrder(${o.order_id})">
-                <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600">#${o.order_id}</span>
-                <span class="badge ${bcls}">${blabel}</span>
-                <span style="font-size:12px;color:var(--ink3)">${date}</span>
-                <span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:var(--cyan)">${fmtCur(o.total_price)}</span>
-                <span id="chevron-${o.order_id}" style="color:var(--ink3);font-size:12px;transition:transform .2s;display:inline-block">▼</span>
+                <span style="font-family:'JetBrains Mono';font-size:13px;font-weight:600">
+                  #${o.order_id}
+                </span>
+
+                <span class="badge ${bcls}">
+                  ${blabel}
+                </span>
+
+                <span style="font-size:12px;color:var(--ink3)">
+                  ${date}
+                </span>
+
+                <span style="margin-left:auto;font-family:'JetBrains Mono';font-size:15px;font-weight:700;color:var(--cyan)">
+                  ${fmtCur(o.total_price)}
+                </span>
+
+                <span id="chevron-${o.order_id}"
+                  style="color:var(--ink3);font-size:12px;transition:transform .2s">
+                  ▼
+                </span>
               </div>
+
               <div id="order-body-${o.order_id}" style="display:none" class="order-body">
+
                 <div style="padding-top:12px">
                   ${(o.items||[]).map(it=>`
                     <div class="order-item-row">
                       <span>${it.product_name} × ${it.quantity}</span>
-                      <span style="font-family:'JetBrains Mono',monospace;color:var(--cyan)">${fmtCur(it.subtotal)}</span>
+                      <span style="font-family:'JetBrains Mono';color:var(--cyan)">
+                        ${fmtCur(it.subtotal)}
+                      </span>
                     </div>
                   `).join('')}
                 </div>
-                ${o.status==='pending'?`
+
+                ${
+                  o.status==='pending' && currentUser.is_admin
+                  ? `
                   <div style="display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
-                    <button class="btn btn-ghost btn-sm" onclick="updateOrderStatus(${o.order_id},'completed')">✓ Mark Complete</button>
-                    <button class="btn btn-danger btn-sm" onclick="updateOrderStatus(${o.order_id},'cancelled')">✕ Cancel & Refund</button>
+                    <button class="btn btn-ghost btn-sm"
+                      onclick="updateOrderStatus(${o.order_id},'completed')">
+                      ✓ Confirm
+                    </button>
+
+                    <button class="btn btn-danger btn-sm"
+                      onclick="updateOrderStatus(${o.order_id},'cancelled')">
+                      ✕ Cancel
+                    </button>
                   </div>
-                `:''}
+                  `
+                  : ''
+                }
+
               </div>
-            </div>`;
+
+            </div>
+            `
           }).join('')
         }
       </div>
-    `;
-  } catch(e) { c.innerHTML = `<div class="alert alert-error">Failed to load orders: ${e.message}</div>`; }
+    `
+
+  } catch(e) {
+
+    c.innerHTML =
+      `<div class="alert alert-error">
+        Failed to load orders: ${e.message}
+      </div>`
+
+  }
 }
 
 function toggleOrder(id) {
@@ -1089,6 +1358,7 @@ async function updateOrderStatus(id, status) {
     renderTab('orders');
   } catch(e) { alert('Cannot update: '+e.message); }
 }
+
 
 // ══════════════════════════════════════════
 // SECURITY TAB
@@ -1196,3 +1466,4 @@ if(authToken) {
 </script>
 </body>
 </html>
+

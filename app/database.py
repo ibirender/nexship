@@ -12,8 +12,8 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
-    DATABASE_URL = "postgresql://postgres:1234@localhost:5432/fastapi_db"
-    print("⚠️ Using hardcoded database URL")
+    DATABASE_URL = "postgresql://neondb_owner:npg_jvnX5EcJke8x@ep-sweet-block-a1dfz75q-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+    print("Connected to default database URL")
 
 # Create engine
 engine = create_engine(
