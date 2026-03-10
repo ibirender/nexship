@@ -2,8 +2,9 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app import schemas, crud, models
-from app.database import get_db
+from app.core import schemas, models
+from app.services import crud
+from app.core.database import get_db
 
 router = APIRouter(prefix="/products", tags=["Products"])
 
@@ -13,7 +14,7 @@ def create_product(product: schemas.ProductCreate, db: Session = Depends(get_db)
 
 @router.get("/", response_model=List[schemas.ProductResponse])
 def read_products(skip: int = 0, limit: int = 20, db: Session = Depends(get_db)):
-    return db.query(models.Product).offset(skip).limit(limit).all()
+    return db.query(models.Product).filter(models.Product.is_available == True).offset(skip).limit(limit).all()
 
 @router.get("/{product_id}", response_model=schemas.ProductResponse)
 def read_product(product_id: int, db: Session = Depends(get_db)):

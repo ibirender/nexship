@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app import schemas, crud, models
-from app.database import get_db
+from app.core import schemas, models
+from app.services import crud
+from app.core.database import get_db
 from app.dependencies import get_current_user, razorpay_client
 
 router = APIRouter(tags=["Orders"])
@@ -104,6 +105,15 @@ def my_orders(
         result = []
 
         for order in orders:
+            items_list = []
+            for item in order.items:
+                items_list.append({
+                    "product_name": item.product.name if item.product else "Deleted Product",
+                    "quantity": item.quantity,
+                    "price_at_purchase": item.price_at_purchase,
+                    "subtotal": item.quantity * item.price_at_purchase
+                })
+
             order_data = {
                 "order_id": order.id,
                 "total_price": order.total_price,
@@ -112,16 +122,8 @@ def my_orders(
                 "used_wallet": order.used_wallet,
                 "razorpay_order_id": order.razorpay_order_id,
                 "payment_status": order.payment_status,
-                "items": []
+                "items": items_list
             }
-
-            for item in order.items:
-                order_data["items"].append({
-                    "product_name": item.product.name if item.product else "Deleted Product",
-                    "quantity": item.quantity,
-                    "price_at_purchase": item.price_at_purchase,
-                    "subtotal": item.quantity * item.price_at_purchase
-                })
 
             result.append(order_data)
 
@@ -146,6 +148,15 @@ def admin_orders(
         for order in orders:
             user = db.query(models.User).filter(models.User.id == order.user_id).first()
 
+            items_list = []
+            for item in order.items:
+                items_list.append({
+                    "product_name": item.product.name if item.product else "Deleted Product",
+                    "quantity": item.quantity,
+                    "price_at_purchase": item.price_at_purchase,
+                    "subtotal": item.quantity * item.price_at_purchase
+                })
+
             order_data = {
                 "order_id": order.id,
                 "user_id": order.user_id,
@@ -156,16 +167,8 @@ def admin_orders(
                 "used_wallet": order.used_wallet,
                 "razorpay_order_id": order.razorpay_order_id,
                 "payment_status": order.payment_status,
-                "items": []
+                "items": items_list
             }
-
-            for item in order.items:
-                order_data["items"].append({
-                    "product_name": item.product.name if item.product else "Deleted Product",
-                    "quantity": item.quantity,
-                    "price_at_purchase": item.price_at_purchase,
-                    "subtotal": item.quantity * item.price_at_purchase
-                })
 
             result.append(order_data)
 

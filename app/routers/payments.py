@@ -2,8 +2,8 @@ import razorpay
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app import models
-from app.database import get_db
+from app.core import models
+from app.core.database import get_db
 from app.dependencies import razorpay_client
 
 router = APIRouter(prefix="/payment", tags=["Payments"])

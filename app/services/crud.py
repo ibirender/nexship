@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from app import models, schemas
+from app.core import models, schemas
 import bcrypt
 
 
@@ -110,7 +110,17 @@ def delete_product(db: Session, product_id: int):
     db_product = get_product(db, product_id)
 
     if db_product:
-        db.delete(db_product)
-        db.commit()
+        # Check if the product is linked to any existing orders
+        order_item = db.query(models.OrderItem).filter(models.OrderItem.product_id == product_id).first()
+        
+        if order_item:
+            # Soft delete: mark as unavailable if it has orders
+            db_product.is_available = False
+            db.commit()
+            db.refresh(db_product)
+        else:
+            # Hard delete: remove from database if it has no orders
+            db.delete(db_product)
+            db.commit()
 
     return db_product

@@ -3,8 +3,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 
-from app.database import engine
-from app import models
+from app.core.database import engine
+from app.core import models
 from app.routers import auth, products, orders, payments
 
 # ===============================

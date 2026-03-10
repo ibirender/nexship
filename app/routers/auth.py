@@ -7,9 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
-from app import schemas, crud, models
-from app.database import get_db
-from app.email_service import send_reset_email
+from app.core import schemas, models
+from app.services import crud
+from app.core.database import get_db
+from app.services.email_service import send_reset_email
 from app.dependencies import security, fake_token_db, get_current_user
 
 router = APIRouter(tags=["Authentication & Users"])
