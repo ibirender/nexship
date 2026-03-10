@@ -61,13 +61,14 @@ import os
 
 frontend_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'frontend')
 
-# mount assets under /static - POST/PUT/etc will not be intercepted
-app.mount("/static", StaticFiles(directory=frontend_path), name="static")
+# safely mount static files if the directory exists (for local dev)
+if os.path.exists(frontend_path):
+    app.mount("/static", StaticFiles(directory=frontend_path), name="static")
 
-# serve index.html for root GET only
-@app.get("/")
-def serve_index():
-    return FileResponse(os.path.join(frontend_path, 'index.html'))
+    @app.get("/")
+    def serve_index():
+        return FileResponse(os.path.join(frontend_path, 'index.html'))
+
 handler = Mangum(app)
 
 # CORS (for your frontend)
@@ -214,9 +215,7 @@ def logout(credentials: HTTPAuthorizationCredentials = Depends(security)):
 # =========================================================
 # ROOT
 # =========================================================
-@app.get("/")
-def root():
-    return {"message": "Product Management API running"}
+# Root is handled by serve_index if frontend exists, otherwise fallback is handled below or by Vercel
 
 
 # =========================================================
