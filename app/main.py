@@ -1,6 +1,12 @@
 import bcrypt
 import secrets
 import random
+import os
+import razorpay
+from datetime import datetime
+from typing import List, Optional
+from dotenv import load_dotenv
+
 
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -21,6 +27,16 @@ from app.email_service import send_reset_email
 security = HTTPBearer()
 fake_token_db = {}  # dev-only token store
 
+# load env and configure payments
+load_dotenv()
+RAZORPAY_KEY = os.getenv("RAZORPAY_KEY")
+RAZORPAY_SECRET = os.getenv("RAZORPAY_SECRET")
+if not RAZORPAY_KEY or not RAZORPAY_SECRET:
+    # warnings can be printed but not raise
+    print("Warning: razorpay credentials missing in .env")
+
+razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY, RAZORPAY_SECRET))
+
 
 # ===============================
 # DATABASE
@@ -36,6 +52,21 @@ app = FastAPI(
     description="Product Management System",
     version="1.0.0"
 )
+
+# serve frontend static files under /static and index at root
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+import os
+
+frontend_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'frontend')
+
+# mount assets under /static - POST/PUT/etc will not be intercepted
+app.mount("/static", StaticFiles(directory=frontend_path), name="static")
+
+# serve index.html for root GET only
+@app.get("/")
+def serve_index():
+    return FileResponse(os.path.join(frontend_path, 'index.html'))
 
 # CORS (for your frontend)
 app.add_middleware(
@@ -269,10 +300,11 @@ def reset_password(otp: str, new_password: str, db: Session = Depends(get_db)):
 @app.post("/orders")
 def create_order(
     order: schemas.OrderCreate,
+    use_wallet: bool = False,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    db_order = models.Order(user_id=current_user.id, status="pending")
+    db_order = models.Order(user_id=current_user.id, status="pending", used_wallet=use_wallet)
     db.add(db_order)
     db.flush()
 
@@ -301,12 +333,46 @@ def create_order(
 
     db_order.total_price = total_price
 
+    # wallet payment path – mark for later deduction, don't change balance or stock yet
+    if use_wallet:
+        # still validate sufficient funds but don't debit now
+        if current_user.balance < total_price:
+            raise HTTPException(status_code=400, detail="Insufficient wallet balance")
+        # leave order pending; admin approval will debit and deduct stock
+        db.commit()
+        db.refresh(db_order)
+
+        return {
+            "order_id": db_order.id,
+            "total": total_price,
+            "message": "Order created successfully; pay with wallet when admin approves"
+        }
+
+    # non-wallet path: create a Razorpay order as soon as we calculate the total
     db.commit()
+
+    amount_paise = int(total_price * 100)
+    try:
+        rz_order = razorpay_client.order.create({
+            "amount": amount_paise,
+            "currency": "INR",
+            "receipt": f"order_{db_order.id}",
+        })
+    except Exception as e:
+        # if Razorpay call fails, rollback db changes and propagate
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Payment gateway error")
+
+    # store razorpay order id for later verification
+    db_order.razorpay_order_id = rz_order.get("id")
+    db.commit()
+    db.refresh(db_order)
 
     return {
         "order_id": db_order.id,
         "total": total_price,
-        "message": "Order created successfully"
+        "razorpay_order": rz_order,
+        "message": "Order created successfully, proceed to payment"
     }
 
 # =========================================================
@@ -317,69 +383,83 @@ def my_orders(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    try:
+        orders = db.query(models.Order).filter(
+            models.Order.user_id == current_user.id
+        ).all()
 
-    orders = db.query(models.Order).filter(
-        models.Order.user_id == current_user.id
-    ).all()
+        result = []
 
-    result = []
+        for order in orders:
+            order_data = {
+                "order_id": order.id,
+                "total_price": order.total_price,
+                "created_at": order.created_at,
+                "status": order.status,
+                "used_wallet": order.used_wallet,
+                "razorpay_order_id": order.razorpay_order_id,
+                "payment_status": order.payment_status,
+                "items": []
+            }
 
-    for order in orders:
-        order_data = {
-            "order_id": order.id,
-            "total_price": order.total_price,
-            "created_at": order.created_at,
-            "status": order.status,
-            "items": []
-        }
+            for item in order.items:
+                order_data["items"].append({
+                    "product_name": item.product.name if item.product else "Deleted Product",
+                    "quantity": item.quantity,
+                    "price_at_purchase": item.price_at_purchase,
+                    "subtotal": item.quantity * item.price_at_purchase
+                })
 
-        for item in order.items:
-            order_data["items"].append({
-                "product_name": item.product.name,
-                "quantity": item.quantity,
-                "price_at_purchase": item.price_at_purchase,
-                "subtotal": item.quantity * item.price_at_purchase
-            })
+            result.append(order_data)
 
-        result.append(order_data)
+        return result
 
-    return result
-
+    except Exception as e:
+        print(f"Orders error: {e}")  # Check your terminal for the real error
+        raise HTTPException(status_code=500, detail=str(e))
 @app.get("/admin/orders")
 def admin_orders(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Admin only")
 
-    orders = db.query(models.Order).all()
+    try:
+        orders = db.query(models.Order).all()
+        result = []
 
-    result = []
+        for order in orders:
+            user = db.query(models.User).filter(models.User.id == order.user_id).first()
 
-    for order in orders:
-        order_data = {
-            "order_id": order.id,
-            "user_id": order.user_id,
-            "total_price": order.total_price,
-            "created_at": order.created_at,
-            "status": order.status,
-            "items": []
-        }
+            order_data = {
+                "order_id": order.id,
+                "user_id": order.user_id,
+                "username": user.username if user else "Deleted User",
+                "total_price": order.total_price,
+                "created_at": order.created_at,
+                "status": order.status,
+                "used_wallet": order.used_wallet,
+                "razorpay_order_id": order.razorpay_order_id,
+                "payment_status": order.payment_status,
+                "items": []
+            }
 
-        for item in order.items:
-            order_data["items"].append({
-                "product_name": item.product.name,
-                "quantity": item.quantity,
-                "price_at_purchase": item.price_at_purchase,
-                "subtotal": item.quantity * item.price_at_purchase
-            })
+            for item in order.items:
+                order_data["items"].append({
+                    "product_name": item.product.name if item.product else "Deleted Product",
+                    "quantity": item.quantity,
+                    "price_at_purchase": item.price_at_purchase,
+                    "subtotal": item.quantity * item.price_at_purchase
+                })
 
-        result.append(order_data)
+            result.append(order_data)
 
-    return result
-# =========================================================
+        return result
+
+    except Exception as e:
+        print(f"ADMIN ORDERS ERROR: {e}")
+        raise HTTPException(status_code=500, detail=str(e))# =========================================================
 # UPDATE ORDER STATUS
 # =========================================================
 @app.put("/orders/{order_id}/status")
@@ -415,10 +495,19 @@ def update_order_status(
             models.User.id == order.user_id
         ).first()
 
-        if order_owner.balance < order.total_price:
-            raise HTTPException(status_code=400, detail="Insufficient balance")
+        # only deduct from wallet if the order was placed using wallet balance
+        if order.used_wallet:
+            if order_owner.balance < order.total_price:
+                raise HTTPException(status_code=400, detail="Insufficient balance")
 
-        order_owner.balance -= order.total_price
+            order_owner.balance -= order.total_price
+            order.payment_status = "completed"
+
+        # reduce stock for each item since order is now finalized
+        for item in order.items:
+            product = item.product
+            if product:
+                product.stock -= item.quantity
 
     # cancel order → restore stock
     if current_status == "pending" and new_status == "cancelled":
@@ -437,3 +526,42 @@ def update_order_status(
         "message": f"Order status updated to {new_status}",
         "order_id": order.id
     }
+
+
+# =========================================================
+# RAZORPAY PAYMENT VERIFICATION
+# =========================================================
+@app.post("/payment/verify")
+def verify_payment(
+    razorpay_order_id: str,
+    razorpay_payment_id: str,
+    razorpay_signature: str,
+    db: Session = Depends(get_db),
+):
+    params_dict = {
+        "razorpay_order_id": razorpay_order_id,
+        "razorpay_payment_id": razorpay_payment_id,
+        "razorpay_signature": razorpay_signature,
+    }
+
+    try:
+        razorpay_client.utility.verify_payment_signature(params_dict)
+    except razorpay.errors.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid payment signature")
+
+    order = db.query(models.Order).filter(
+        models.Order.razorpay_order_id == razorpay_order_id
+    ).first()
+
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    order.razorpay_payment_id = razorpay_payment_id
+    order.payment_status = "completed"
+    # leave order.status as "pending"; admin will confirm before completing
+
+    # wallet is not affected here
+
+    db.commit()
+
+    return {"message": "Payment verified and order completed"}

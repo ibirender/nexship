@@ -95,3 +95,17 @@ class OrderItemCreate(BaseModel):
 
 class OrderCreate(BaseModel):
     items: List[OrderItemCreate]
+
+
+class OrderResponse(BaseModel):
+    id: int
+    user_id: int
+    total_price: float
+    status: str
+    razorpay_order_id: Optional[str] = None
+    payment_status: Optional[str] = None
+    used_wallet: bool = False
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
