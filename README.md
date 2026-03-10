@@ -75,7 +75,7 @@ Installation
 
 Clone the repository:
 
-git clone https://github.com/ibirender/nexship.git
+git clone https://github.com/ibirender/My-First-Api
 cd nexship
 
 Install dependencies:
