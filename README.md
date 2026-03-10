@@ -75,7 +75,7 @@ Installation
 
 Clone the repository:
 
-git clone https://github.com/yourusername/nexship.git
+git clone https://github.com/ibirender/nexship.git
 cd nexship
 
 Install dependencies:
