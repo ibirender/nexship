@@ -89,8 +89,9 @@ uvicorn app.main:app --reload
 API documentation:
 
 http://localhost:8000/docs
-Author
 
+
+Author
 Birender Singh
 BTech – Data Science
 Backend Developer (FastAPI / Python)
