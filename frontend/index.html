@@ -1309,7 +1309,8 @@
       padding: 32px 28px;
       box-shadow: 0 8px 48px rgba(0, 0, 0, 0.4)
     }
-
+    }
+    
     /* ── WALLET PAGE ── */
     .wallet-hero {
       background: linear-gradient(135deg, rgba(124, 106, 247, 0.14) 0%, rgba(34, 211, 238, 0.07) 50%, rgba(16, 185, 129, 0.05) 100%);
@@ -1322,6 +1323,55 @@
       overflow: hidden;
       box-shadow: 0 0 80px rgba(124, 106, 247, 0.1)
     }
+
+
+    .topup-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 300;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(10px);
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .topup-card {
+      width: 100%;
+      max-width: 400px;
+      background: var(--bg1);
+      border: 1px solid var(--border2);
+      border-radius: 24px;
+      padding: 32px;
+      box-shadow: 0 32px 80px rgba(0, 0, 0, 0.5);
+      animation: scaleIn .3s both;
+    }
+
+    .amount-presets {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .preset-btn {
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .2s;
+    }
+
+    .preset-btn:hover {
+      background: rgba(124, 106, 247, 0.1);
+      border-color: var(--violet);
+    }
+
 
     .wallet-hero-amount {
       font-family: 'Bricolage Grotesque', sans-serif;
@@ -1789,9 +1839,36 @@
         <button class="btn btn-ghost btn-sm" style="flex:1" onclick="closeProductModal()">Cancel</button>
         <button class="btn btn-primary btn-sm" style="flex:2" id="modal-submit-btn" onclick="submitProduct()">Create
           Product →</button>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+     TOP-UP MODAL
+  ══════════════════════════════════════════ -->
+  <div class="topup-modal" id="topup-modal" onclick="if(event.target===this)closeTopupModal()">
+    <div class="topup-card">
+      <h2 class="modal-title">Add Money to Wallet</h2>
+      <p style="color:var(--ink2);font-size:14px;margin-bottom:24px">Funds will be added instantly after payment.</p>
+      
+      <div class="amount-presets">
+        <button class="preset-btn" onclick="setTopupAmount(500)">₹500</button>
+        <button class="preset-btn" onclick="setTopupAmount(1000)">₹1,000</button>
+        <button class="preset-btn" onclick="setTopupAmount(2000)">₹2,000</button>
+      </div>
+
+      <div class="field">
+        <label>Enter Amount (₹)</label>
+        <input id="topup-amount" type="number" placeholder="Enter amount" min="1" step="1" />
+      </div>
+
+      <div id="topup-alert"></div>
+
+      <div style="display:flex;gap:12px;margin-top:24px">
+        <button class="btn btn-ghost" style="flex:1" onclick="closeTopupModal()">Cancel</button>
+        <button class="btn btn-primary" style="flex:2" id="topup-pay-btn" onclick="initiateWalletTopup()">Add Money →</button>
       </div>
     </div>
   </div>
+
 
   <script>
     // ══════════════════════════════════════════
@@ -2060,8 +2137,63 @@
     }
 
     // ══════════════════════════════════════════
-    // TAB SWITCHING
+    // WALLET TOP-UP
     // ══════════════════════════════════════════
+    function openTopupModal() {
+      document.getElementById('topup-modal').style.display = 'flex';
+      document.getElementById('topup-amount').value = '';
+    }
+    function closeTopupModal() {
+      document.getElementById('topup-modal').style.display = 'none';
+    }
+    function setTopupAmount(amt) {
+      document.getElementById('topup-amount').value = amt;
+    }
+
+    async function initiateWalletTopup() {
+      const amt = parseFloat(document.getElementById('topup-amount').value);
+      if (!amt || amt <= 0) return showAlert('topup-alert', 'Enter a valid amount.');
+      
+      setBtnLoading('topup-pay-btn', true);
+      try {
+        const data = await req('POST', '/payment/wallet/topup', { amount: amt });
+        const options = {
+          key: RAZORPAY_KEY_ID || 'rzp_test_YOUR_KEY', // Fallback or defined in script
+          amount: data.razorpay_order.amount,
+          currency: "INR",
+          name: "Nexship Wallet",
+          description: "Fund your wallet balance",
+          order_id: data.razorpay_order.id,
+          handler: async function (response) {
+            try {
+              await req('POST', '/payment/verify', {
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature
+              });
+              closeTopupModal();
+              refreshBalance();
+              // If in wallet tab, re-render to show transaction
+              if (currentTab === 'wallet') renderWallet(document.getElementById('tab-content'));
+            } catch (e) {
+              showAlert('topup-alert', 'Verification failed: ' + e.message);
+            }
+          },
+          prefill: {
+            name: currentUser.username,
+            email: currentUser.email
+          },
+          theme: { color: "#7c6af7" }
+        };
+        const rzp = new Razorpay(options);
+        rzp.open();
+      } catch (e) {
+        showAlert('topup-alert', e.message);
+      } finally {
+        setBtnLoading('topup-pay-btn', false, 'Add Money →');
+      }
+    }
+
     const TAB_TITLES = { profile: 'My Profile', wallet: 'Wallet', products: 'Products', orders: 'Orders', security: 'Security' };
     function switchTab(tab) {
       currentTab = tab;
@@ -2145,8 +2277,12 @@
       <div style="font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:rgba(167,139,250,0.6);margin-bottom:12px">Current Balance</div>
       <div class="wallet-hero-amount" id="big-balance">${fmtCur(currentBalance)}</div>
       <div style="font-size:14px;color:rgba(167,139,250,0.5);margin-bottom:28px">Available in your wallet</div>
-      <button class="btn btn-outline btn-sm" style="border-color:rgba(124,106,247,.3);color:#a78bfa" onclick="refreshBalance().then(()=>{})">↻ Refresh Balance</button>
+      <div style="display:flex;justify-content:center;gap:12px">
+        <button class="btn btn-primary btn-sm" onclick="openTopupModal()">+ Add Money</button>
+        <button class="btn btn-outline btn-sm" style="border-color:rgba(124,106,247,.3);color:#a78bfa" onclick="refreshBalance().then(()=>{})">↻ Refresh</button>
+      </div>
     </div>
+
     <div class="sec-head anim-rise-1">
       <div class="sec-title">Transaction History</div>
     </div>

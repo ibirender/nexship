@@ -109,3 +109,23 @@ class OrderResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# =========================
+# WALLET SCHEMAS
+# =========================
+
+class WalletTopUpRequest(BaseModel):
+    amount: float
+
+class WalletTransactionResponse(BaseModel):
+    id: int
+    user_id: int
+    amount: float
+    status: str
+    razorpay_order_id: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+

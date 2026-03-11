@@ -74,3 +74,17 @@ class UserToken(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     
     user = relationship("User")
+
+class WalletTransaction(Base):
+    __tablename__ = "wallet_transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    amount = Column(Float, nullable=False)
+    razorpay_order_id = Column(String(100), nullable=True)
+    razorpay_payment_id = Column(String(100), nullable=True)
+    status = Column(String(50), default="pending") # pending / completed / failed
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+
