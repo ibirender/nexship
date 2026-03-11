@@ -1309,9 +1309,9 @@
       padding: 32px 28px;
       box-shadow: 0 8px 48px rgba(0, 0, 0, 0.4)
     }
-    }
     
     /* ── WALLET PAGE ── */
+
     .wallet-hero {
       background: linear-gradient(135deg, rgba(124, 106, 247, 0.14) 0%, rgba(34, 211, 238, 0.07) 50%, rgba(16, 185, 129, 0.05) 100%);
       border: 1px solid rgba(124, 106, 247, 0.25);
@@ -2105,6 +2105,7 @@
     }
 
     function updateBalanceUI(flash = false) {
+      console.log("NEXSHIP WALLET v2.1 LOADED");
       const formatted = fmtCur(currentBalance);
       const sidebarEl = document.getElementById('sidebar-balance');
       const topbarEl = document.getElementById('topbar-balance');
