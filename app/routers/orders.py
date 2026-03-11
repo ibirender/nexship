@@ -146,13 +146,12 @@ def admin_orders(
 
     try:
         orders = db.query(models.Order).options(
-            joinedload(models.Order.items).joinedload(models.OrderItem.product)
+            joinedload(models.Order.items).joinedload(models.OrderItem.product),
+            joinedload(models.Order.user)
         ).all()
         result = []
 
         for order in orders:
-            user = db.query(models.User).filter(models.User.id == order.user_id).first()
-
             items_list = []
             for item in order.items:
                 items_list.append({
@@ -165,7 +164,7 @@ def admin_orders(
             order_data = {
                 "order_id": order.id,
                 "user_id": order.user_id,
-                "username": user.username if user else "Deleted User",
+                "username": order.user.username if order.user else "Deleted User",
                 "total_price": order.total_price,
                 "created_at": order.created_at,
                 "status": order.status,

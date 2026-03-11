@@ -23,6 +23,8 @@ class User(Base):#inherit kr rha h Base se, jiska matlab h ki ye class ek databa
     otp_expiry = Column(DateTime, nullable=True)
     balance = Column(Float, default=0)
     
+    orders = relationship("Order", back_populates="user")
+    
 class Product(Base):
     __tablename__ = "products"
 
@@ -45,6 +47,7 @@ class Order(Base):
     total_price = Column(Float, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     items = relationship("OrderItem", backref="order")
+    user = relationship("User", back_populates="orders")
     status = Column(String, default="pending")  # pending / completed / cancelled
     # payment gateway fields
     razorpay_order_id = Column(String(100), nullable=True)
