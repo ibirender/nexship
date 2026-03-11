@@ -5,6 +5,7 @@ from app.core import schemas, models
 from app.services import crud
 from app.core.database import get_db
 from app.dependencies import get_current_user, razorpay_client
+from sqlalchemy.orm import joinedload
 
 router = APIRouter(tags=["Orders"])
 
@@ -98,7 +99,9 @@ def my_orders(
     db: Session = Depends(get_db),
 ):
     try:
-        orders = db.query(models.Order).filter(
+        orders = db.query(models.Order).options(
+            joinedload(models.Order.items).joinedload(models.OrderItem.product)
+        ).filter(
             models.Order.user_id == current_user.id
         ).all()
 
@@ -142,7 +145,9 @@ def admin_orders(
         raise HTTPException(status_code=403, detail="Admin only")
 
     try:
-        orders = db.query(models.Order).all()
+        orders = db.query(models.Order).options(
+            joinedload(models.Order.items).joinedload(models.OrderItem.product)
+        ).all()
         result = []
 
         for order in orders:

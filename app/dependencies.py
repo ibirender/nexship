@@ -15,7 +15,6 @@ load_dotenv()
 # SECURITY & AUTH STATE
 # ===============================
 security = HTTPBearer()
-fake_token_db = {}  # dev-only token store
 
 # ===============================
 # RAZORPAY SETUP
@@ -36,13 +35,14 @@ def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
 ):
-    token = credentials.credentials
+    token_str = credentials.credentials
 
-    if token not in fake_token_db:
+    token_record = db.query(models.UserToken).filter(models.UserToken.token == token_str).first()
+
+    if not token_record:
         raise HTTPException(401, "Invalid or expired token")
 
-    username = fake_token_db[token]
-    user = crud.get_user_by_username(db, username)
+    user = token_record.user
 
     if not user:
         raise HTTPException(401, "User not found")

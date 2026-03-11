@@ -11,7 +11,7 @@ from app.core import schemas, models
 from app.services import crud
 from app.core.database import get_db
 from app.services.email_service import send_reset_email
-from app.dependencies import security, fake_token_db, get_current_user
+from app.dependencies import security, get_current_user
 
 router = APIRouter(tags=["Authentication & Users"])
 
@@ -34,10 +34,12 @@ def login(user_data: schemas.UserLogin, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(401, "Incorrect username or password")
 
-    token = secrets.token_hex(16)
-    fake_token_db[token] = user.username
+    token_str = secrets.token_hex(16)
+    db_token = models.UserToken(token=token_str, user_id=user.id)
+    db.add(db_token)
+    db.commit()
 
-    return {"access_token": token, "token_type": "bearer"}
+    return {"access_token": token_str, "token_type": "bearer"}
 
 @router.get("/users/me", response_model=schemas.UserResponse)
 def get_current_user_route(
@@ -80,23 +82,21 @@ def change_password(
     db.refresh(current_user)
 
     # invalidate all tokens for this user
-    tokens_to_delete = [
-        t for t, u in fake_token_db.items() if u == current_user.username
-    ]
-    for t in tokens_to_delete:
-        fake_token_db.pop(t)
+    db.query(models.UserToken).filter(models.UserToken.user_id == current_user.id).delete()
+    db.commit()
 
     return {
         "message": "Password changed successfully",
-        "tokens_deleted": len(tokens_to_delete),
     }
 
 @router.post("/logout")
-def logout(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    token = credentials.credentials
+def logout(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)):
+    token_str = credentials.credentials
 
-    if token in fake_token_db:
-        fake_token_db.pop(token)
+    token_record = db.query(models.UserToken).filter(models.UserToken.token == token_str).first()
+    if token_record:
+        db.delete(token_record)
+        db.commit()
         return {"message": "Logged out successfully"}
 
     raise HTTPException(401, "Token already expired or invalid")
