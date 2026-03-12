@@ -15,10 +15,14 @@ if not DATABASE_URL:
     DATABASE_URL = "postgresql://neondb_owner:npg_jvnX5EcJke8x@ep-sweet-block-a1dfz75q-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
     print("Connected to default database URL")
 
-# Create engine
+# Create engine with resilient settings for serverless
 engine = create_engine(
     DATABASE_URL,
-    pool_pre_ping=True
+    pool_pre_ping=True,       # Verifies connection before use
+    pool_size=5,              # Small pool size for serverless
+    max_overflow=10,          # Allow some overflow
+    pool_recycle=300,         # Recycle connections every 5 mins
+    connect_args={"connect_timeout": 10} # 10s timeout for connection
 )
 
 # Create session factory(basically session generator h baad m just session local)
